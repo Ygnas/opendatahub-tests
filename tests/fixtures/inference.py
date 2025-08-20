@@ -33,40 +33,6 @@ def vllm_cpu_runtime(
         containers={
             "kserve-container": {
                 "args": [
-                    "--port=8032",
-                    "--model=/mnt/models",
-                ],
-                "ports": [{"containerPort": 8032, "protocol": "TCP"}],
-                "volumeMounts": [{"mountPath": "/dev/shm", "name": "shm"}],
-            }
-        },
-        volumes=[{"emptyDir": {"medium": "Memory", "sizeLimit": "2Gi"}, "name": "shm"}],
-    ) as serving_runtime:
-        yield serving_runtime
-
-
-@pytest.fixture(scope="class")
-def qwen_isvc(
-    admin_client: DynamicClient,
-    model_namespace: Namespace,
-    minio_pod: Pod,
-    minio_service: Service,
-    minio_data_connection: Secret,
-    vllm_cpu_runtime: ServingRuntime,
-) -> Generator[InferenceService, Any, Any]:
-    with create_isvc(
-        client=admin_client,
-        name="qwen-isvc",
-        namespace=model_namespace.name,
-        deployment_mode=KServeDeploymentType.RAW_DEPLOYMENT,
-        model_format="vLLM",
-        runtime=vllm_cpu_runtime.name,
-        storage_key=minio_data_connection.name,
-        storage_path="Qwen2.5-0.5B-Instruct",
-        wait_for_predictor_pods=False,
-        resources={
-            "requests": {"cpu": "2", "memory": "10Gi"},
-            "limits": {"cpu": "2", "memory": "12Gi"},
         },
     ) as isvc:
         yield isvc

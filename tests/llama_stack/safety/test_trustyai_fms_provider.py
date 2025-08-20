@@ -4,32 +4,6 @@ from simple_logger.logger import get_logger
 
 from tests.llama_stack.constants import LlamaStackProviders
 
-from utilities.constants import MinIo, CHAT_GENERATION_CONFIG, BUILTIN_DETECTOR_CONFIG, QWEN_MODEL_NAME
-
-LOGGER = get_logger(name=__name__)
-SECURE_SHIELD_ID: str = "secure_shield"
-
-
-@pytest.mark.parametrize(
-    "model_namespace, minio_pod, minio_data_connection, "
-    "orchestrator_config, guardrails_orchestrator, llama_stack_server_config",
-    [
-        pytest.param(
-            {"name": "test-llamastack-gorch"},
-            MinIo.PodConfig.QWEN_HAP_BPIV2_MINIO_CONFIG,
-            {"bucket": "llms"},
-            {
-                "orchestrator_config_data": {
-                    "config.yaml": yaml.dump({
-                        "chat_generation": CHAT_GENERATION_CONFIG,
-                        "detectors": BUILTIN_DETECTOR_CONFIG,
-                    })
-                },
-            },
-            {"enable_built_in_detectors": True, "enable_guardrails_gateway": False},
-            {
-                "vllm_url_fixture": "qwen_isvc_url",
-                "inference_model": QWEN_MODEL_NAME,
                 "fms_orchestrator_url_fixture": "guardrails_orchestrator_url",
             },
         )

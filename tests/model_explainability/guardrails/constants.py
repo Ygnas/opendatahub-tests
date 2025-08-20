@@ -1,6 +1,5 @@
-from typing import List
+QWEN_ISVC_NAME = "qwen-isvc"
 
-from dataclasses import dataclass
 
 EXAMPLE_EMAIL_ADDRESS: str = "myemail@domain.com"
 PROMPT_WITH_PII: str = f"This is my email address: {EXAMPLE_EMAIL_ADDRESS}, just answer ACK."

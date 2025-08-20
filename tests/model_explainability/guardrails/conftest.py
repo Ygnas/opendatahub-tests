@@ -9,12 +9,18 @@ from ocp_resources.secret import Secret
 from ocp_resources.serving_runtime import ServingRuntime
 
 from utilities.certificates_utils import create_ca_bundle_file
-from utilities.constants import KServeDeploymentType, RuntimeTemplates
+from utilities.constants import (
+    KServeDeploymentType,
+    Labels,
+)
 from utilities.inference_utils import create_isvc
 from utilities.serving_runtime import ServingRuntimeFromTemplate
 
 
 GUARDRAILS_ORCHESTRATOR_NAME = "guardrails-orchestrator"
+
+
+# GuardrailsOrchestrator related fixtures
 
 
 # ServingRuntimes, InferenceServices, and related resources
@@ -29,6 +35,24 @@ def huggingface_sr(
         name="guardrails-detector-runtime-prompt-injection",
         template_name=RuntimeTemplates.GUARDRAILS_DETECTOR_HUGGINGFACE,
         namespace=model_namespace.name,
+        containers=[
+            {
+                "name": "kserve-container",
+                "image": "quay.io/trustyai/guardrails-detector-huggingface-runtime:v0.2.0",
+                "command": ["uvicorn", "app:app"],
+                "args": [
+                    "--workers=4",
+                    "--host=0.0.0.0",
+                    "--port=8000",
+                    "--log-config=/common/log_conf.yaml",
+                ],
+                "env": [
+                    {"name": "MODEL_DIR", "value": MNT_MODELS},
+                    {"name": "HF_HOME", "value": "/tmp/hf_home"},
+                ],
+                "ports": [{"containerPort": 8000, "protocol": "TCP"}],
+            }
+        ],
         supported_model_formats=[{"name": "guardrails-detector-huggingface", "autoSelect": True}],
     ) as serving_runtime:
         yield serving_runtime

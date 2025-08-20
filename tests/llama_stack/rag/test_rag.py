@@ -7,7 +7,7 @@ from llama_stack_client.types import EmbeddingsResponse, QueryChunksResponse
 from llama_stack_client.types.vector_io_insert_params import Chunk
 from simple_logger.logger import get_logger
 
-from utilities.constants import MinIo, QWEN_MODEL_NAME
+from utilities.constants import MinIo, MNT_MODELS
 from utilities.rag_utils import TurnExpectation, validate_rag_agent_responses
 
 LOGGER = get_logger(name=__name__)
@@ -17,12 +17,12 @@ LOGGER = get_logger(name=__name__)
     "model_namespace, minio_pod, minio_data_connection, llama_stack_server_config",
     [
         pytest.param(
-            {"name": "test-llamastack-rag"},
+            {"name": "test-guardrails-lls"},
             MinIo.PodConfig.QWEN_HAP_BPIV2_MINIO_CONFIG,
             {"bucket": "llms"},
             {
                 "vllm_url_fixture": "qwen_isvc_url",
-                "inference_model": QWEN_MODEL_NAME,
+                "inference_model": MNT_MODELS,
             },
         )
     ],

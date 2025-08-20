@@ -18,16 +18,10 @@ from tests.model_explainability.guardrails.utils import (
     verify_builtin_detector_unsuitable_output_response,
     get_auth_headers,
     get_chat_detections_payload,
+    log_request_and_response,
 )
 from tests.model_explainability.utils import validate_tai_component_images
-from utilities.constants import (
-    Timeout,
-    CHAT_GENERATION_CONFIG,
-    BUILTIN_DETECTOR_CONFIG,
-    MinIo,
-    QWEN_MODEL_NAME,
-    QWEN_ISVC_NAME,
-)
+from utilities.constants import Timeout
 from utilities.plugins.constant import OpenAIEnpoints
 
 LOGGER = get_logger(name=__name__)
@@ -48,6 +42,7 @@ HF_DETECTORS: Dict[str, Dict[str, Any]] = {
     "input": {"prompt_injection": {}, "hap": {}},
     "output": {"prompt_injection": {}, "hap": {}},
 }
+
 
 
 @pytest.mark.parametrize(
@@ -150,11 +145,13 @@ class TestGuardrailsOrchestratorWithBuiltInDetectors:
             return False
 
         response = check_health_endpoint()
+        log_request_and_response(response=response)
 
         assert "fms-guardrails-orchestr8" in response.text
 
     def test_guardrails_info_endpoint(self, qwen_isvc, guardrails_orchestrator_health_route):
         response = requests.get(url=f"https://{guardrails_orchestrator_health_route.host}/info", verify=False)
+        log_request_and_response(response=response)
 
         assert response.status_code == http.HTTPStatus.OK
 
@@ -175,6 +172,7 @@ class TestGuardrailsOrchestratorWithBuiltInDetectors:
             ),
             verify=openshift_ca_bundle_file,
         )
+        log_request_and_response(response=response)
 
         verify_builtin_detector_unsuitable_input_response(
             response=response,
@@ -196,6 +194,8 @@ class TestGuardrailsOrchestratorWithBuiltInDetectors:
             ),
             verify=openshift_ca_bundle_file,
         )
+
+        log_request_and_response(response=response)
 
         verify_builtin_detector_unsuitable_output_response(
             response=response, detector_id="regex", detection_name="email_address", detection_type="pii"
@@ -230,6 +230,8 @@ class TestGuardrailsOrchestratorWithBuiltInDetectors:
             ),
             verify=openshift_ca_bundle_file,
         )
+
+        log_request_and_response(response=response)
 
         verify_negative_detection_response(response=response)
 
@@ -312,6 +314,8 @@ class TestGuardrailsOrchestratorWithHuggingFaceDetectors:
             verify=openshift_ca_bundle_file,
         )
 
+        log_request_and_response(response=response)
+
         verify_builtin_detector_unsuitable_input_response(
             response=response,
             detector_id="prompt_injection",
@@ -339,6 +343,8 @@ class TestGuardrailsOrchestratorWithHuggingFaceDetectors:
             verify=openshift_ca_bundle_file,
         )
 
+        log_request_and_response(response=response)
+
         verify_negative_detection_response(response=response)
 
     def test_guardrails_standalone_detector_endpoint(
@@ -359,6 +365,8 @@ class TestGuardrailsOrchestratorWithHuggingFaceDetectors:
             json=payload,
             verify=openshift_ca_bundle_file,
         )
+
+        log_request_and_response(response=response)
 
         assert response.status_code == http.HTTPStatus.OK, (
             f"Unexpected status code: {response.status_code}, body: {response.text}"
@@ -453,6 +461,8 @@ class TestGuardrailsOrchestratorWithMultipleDetectors:
                 verify=openshift_ca_bundle_file,
             )
 
+            log_request_and_response(response=response)
+
             verify_builtin_detector_unsuitable_input_response(
                 response=response,
                 detector_id=guardrails_prompt.detector_id,
@@ -478,5 +488,7 @@ class TestGuardrailsOrchestratorWithMultipleDetectors:
             json=get_chat_detections_payload(content=HARMLESS_PROMPT, model=QWEN_MODEL_NAME, detectors=HF_DETECTORS),
             verify=openshift_ca_bundle_file,
         )
+
+        log_request_and_response(response=response)
 
         verify_negative_detection_response(response=response)

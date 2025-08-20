@@ -355,6 +355,13 @@ OPENSHIFT_OPERATORS: str = "openshift-operators"
 MARIADB: str = "mariadb"
 MODEL_REGISTRY_CUSTOM_NAMESPACE: str = "model-registry-custom-ns"
 THANOS_QUERIER_ADDRESS = "https://thanos-querier.openshift-monitoring.svc:9092"
+CHAT_GENERATION_CONFIG: Dict[str, Any] = {
+    "service": {
+        "hostname": "qwen-isvc-predictor",
+        "port": 8032,
+        "request_timeout": 600,
+    }
+}
 BUILTIN_DETECTOR_CONFIG: Dict[str, Any] = {
     "regex": {
         "type": "text_contents",
@@ -366,10 +373,4 @@ BUILTIN_DETECTOR_CONFIG: Dict[str, Any] = {
         "default_threshold": 0.5,
     }
 }
-
-QWEN_ISVC_NAME = "qwen-isvc"
-CHAT_GENERATION_CONFIG: Dict[str, Any] = {
-    "service": {"hostname": f"{QWEN_ISVC_NAME}-predictor", "port": 8032, "request_timeout": 600}
-}
-TRUSTYAI_SERVICE_NAME: str = "trustyai-service"
-QWEN_MODEL_NAME: str = "qwen2.5-0.5b-instruct"
+MNT_MODELS: str = "/mnt/models"
