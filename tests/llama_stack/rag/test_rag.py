@@ -17,7 +17,7 @@ LOGGER = get_logger(name=__name__)
     "model_namespace, minio_pod, minio_data_connection, llama_stack_server_config",
     [
         pytest.param(
-            {"name": "test-llamastack-rag"},
+            {"name": "test-guardrails-lls"},
             MinIo.PodConfig.QWEN_HAP_BPIV2_MINIO_CONFIG,
             {"bucket": "llms"},
             {
