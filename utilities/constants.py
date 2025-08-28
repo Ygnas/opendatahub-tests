@@ -374,3 +374,4 @@ BUILTIN_DETECTOR_CONFIG: Dict[str, Any] = {
     }
 }
 MNT_MODELS: str = "/mnt/models"
+TRUSTYAI_SERVICE_NAME: str = "trustyai-service"
