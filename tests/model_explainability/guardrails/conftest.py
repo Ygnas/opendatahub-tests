@@ -14,12 +14,107 @@ from utilities.constants import (
     MNT_MODELS,
 )
 from utilities.inference_utils import create_isvc
+from utilities.serving_runtime import ServingRuntimeFromTemplate
 
 
 GUARDRAILS_ORCHESTRATOR_NAME = "guardrails-orchestrator"
 
 
 # GuardrailsOrchestrator related fixtures
+@pytest.fixture(scope="class")
+def guardrails_orchestrator(
+    request: FixtureRequest,
+    admin_client: DynamicClient,
+    model_namespace: Namespace,
+    orchestrator_config: ConfigMap,
+) -> Generator[GuardrailsOrchestrator, Any, Any]:
+    gorch_kwargs = {
+        "client": admin_client,
+        "name": GUARDRAILS_ORCHESTRATOR_NAME,
+        "namespace": model_namespace.name,
+        "orchestrator_config": orchestrator_config.name,
+        "replicas": 1,
+        "wait_for_resource": True,
+    }
+
+    if enable_built_in_detectors := request.param.get("enable_built_in_detectors"):
+        gorch_kwargs["enable_built_in_detectors"] = enable_built_in_detectors
+
+    if request.param.get("enable_guardrails_gateway"):
+        guardrails_gateway_config = request.getfixturevalue(argname="guardrails_gateway_config")
+        gorch_kwargs["enable_guardrails_gateway"] = True
+        gorch_kwargs["guardrails_gateway_config"] = guardrails_gateway_config.name
+
+    with GuardrailsOrchestrator(**gorch_kwargs) as gorch:
+        gorch_deployment = Deployment(name=gorch.name, namespace=gorch.namespace, wait_for_resource=True)
+        gorch_deployment.wait_for_replicas()
+        yield gorch
+
+
+@pytest.fixture(scope="class")
+def orchestrator_config(
+    request: FixtureRequest, admin_client: DynamicClient, model_namespace: Namespace
+) -> Generator[ConfigMap, Any, Any]:
+    with ConfigMap(
+        client=admin_client,
+        name="fms-orchestr8-config-nlp",
+        namespace=model_namespace.name,
+        data=request.param["orchestrator_config_data"],
+    ) as cm:
+        yield cm
+
+
+@pytest.fixture(scope="class")
+def guardrails_gateway_config(
+    request: FixtureRequest, admin_client: DynamicClient, model_namespace: Namespace
+) -> Generator[ConfigMap, Any, Any]:
+    with ConfigMap(
+        client=admin_client,
+        name="fms-orchestr8-config-gateway",
+        namespace=model_namespace.name,
+        label={Labels.Openshift.APP: "fmstack-nlp"},
+        data=request.param["guardrails_gateway_config_data"],
+    ) as cm:
+        yield cm
+
+
+@pytest.fixture(scope="class")
+def guardrails_orchestrator_pod(
+    admin_client: DynamicClient,
+    model_namespace: Namespace,
+    guardrails_orchestrator: GuardrailsOrchestrator,
+) -> Pod:
+    return list(
+        Pod.get(
+            namespace=model_namespace.name, label_selector=f"app.kubernetes.io/instance={GUARDRAILS_ORCHESTRATOR_NAME}"
+        )
+    )[0]
+
+
+@pytest.fixture(scope="class")
+def guardrails_orchestrator_route(
+    admin_client: DynamicClient,
+    model_namespace: Namespace,
+    guardrails_orchestrator: GuardrailsOrchestrator,
+) -> Generator[Route, Any, Any]:
+    yield Route(
+        name=f"{guardrails_orchestrator.name}",
+        namespace=guardrails_orchestrator.namespace,
+        wait_for_resource=True,
+    )
+
+
+@pytest.fixture(scope="class")
+def guardrails_orchestrator_health_route(
+    admin_client: DynamicClient,
+    model_namespace: Namespace,
+    guardrails_orchestrator: GuardrailsOrchestrator,
+) -> Generator[Route, Any, Any]:
+    yield Route(
+        name=f"{guardrails_orchestrator.name}-health",
+        namespace=guardrails_orchestrator.namespace,
+        wait_for_resource=True,
+    )
 
 
 # ServingRuntimes, InferenceServices, and related resources
@@ -29,9 +124,10 @@ def huggingface_sr(
     admin_client: DynamicClient,
     model_namespace: Namespace,
 ) -> Generator[ServingRuntime, Any, Any]:
-    with ServingRuntime(
+    with ServingRuntimeFromTemplate(
         client=admin_client,
         name="guardrails-detector-runtime-prompt-injection",
+        template_name=RuntimeTemplates.GUARDRAILS_DETECTOR_HUGGINGFACE,
         namespace=model_namespace.name,
         containers=[
             {
@@ -52,16 +148,6 @@ def huggingface_sr(
             }
         ],
         supported_model_formats=[{"name": "guardrails-detector-huggingface", "autoSelect": True}],
-        multi_model=False,
-        annotations={
-            "openshift.io/display-name": "Guardrails Detector ServingRuntime for KServe",
-            "opendatahub.io/recommended-accelerators": '["nvidia.com/gpu"]',
-            "prometheus.io/port": "8080",
-            "prometheus.io/path": "/metrics",
-        },
-        label={
-            "opendatahub.io/dashboard": "true",
-        },
     ) as serving_runtime:
         yield serving_runtime
 
