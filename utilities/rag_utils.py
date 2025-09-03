@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from ocp_resources.llama_stack_distribution import LlamaStackDistribution
 from kubernetes.dynamic import DynamicClient
-from typing import Any, Dict, Generator, List, TypedDict, cast
+from typing import Any, Callable, Dict, Generator, List, TypedDict, cast
 from llama_stack_client import Agent, AgentEventLogger
 from simple_logger.logger import get_logger
 
@@ -213,3 +213,97 @@ def validate_rag_agent_responses(
         LOGGER.info(f"Overall result: {'✓ PASSED' if overall_success else '✗ FAILED'}")
 
     return cast(ValidationResult, {"success": overall_success, "results": all_results, "summary": summary})
+
+
+def validate_api_responses(
+    response_fn: Callable[[str], str],
+    test_cases: List[TurnExpectation],
+    min_keywords_required: int = 1,
+    verbose: bool = True,
+) -> Dict[str, Any]:
+    """
+    Validate API responses against expected keywords.
+
+    Args:
+        response_fn: Function that takes a question (str) and returns a response (str).
+        test_cases: List of TurnExpectation dicts with 'question', 'expected_keywords', and 'description'.
+        min_keywords_required: Minimum number of expected keywords that must appear in the response.
+        verbose: Whether to print logs.
+
+    Returns:
+        Dict with overall success, detailed results, and a summary.
+    """
+    all_results = []
+    successful = 0
+
+    for idx, test in enumerate(test_cases, 1):
+        question = test["question"]
+        expected_keywords = test["expected_keywords"]
+        description = test.get("description", "")
+
+        if verbose:
+            print(f"\n[{idx}] Question: {question}")
+            if description:
+                print(f"    Expectation: {description}")
+
+        try:
+            response = response_fn(question)
+            response_lower = response.lower()
+
+            found = [kw for kw in expected_keywords if kw.lower() in response_lower]
+            missing = [kw for kw in expected_keywords if kw.lower() not in response_lower]
+            success = len(found) >= min_keywords_required
+
+            if success:
+                successful += 1
+
+            result = {
+                "question": question,
+                "description": description,
+                "expected_keywords": expected_keywords,
+                "found_keywords": found,
+                "missing_keywords": missing,
+                "response": response,
+                "success": success
+            }
+
+            all_results.append(result)
+
+            if verbose:
+                print(f"✓ Found: {found}")
+                if missing:
+                    print(f"✗ Missing: {missing}")
+                print(f"Result: {'PASS' if success else 'FAIL'}")
+                print(f"Response: {response}")
+
+        except Exception as e:
+            all_results.append({
+                "question": question,
+                "description": description,
+                "expected_keywords": expected_keywords,
+                "found_keywords": [],
+                "missing_keywords": expected_keywords,
+                "response": "",
+                "success": False,
+                "error": str(e)
+            })
+            if verbose:
+                print(f"ERROR: {str(e)}")
+
+    total = len(test_cases)
+    summary = {
+        "total": total,
+        "passed": successful,
+        "failed": total - successful,
+        "success_rate": successful / total if total > 0 else 0,
+    }
+
+    if verbose:
+        print("\n" + "=" * 40)
+        print("Validation Summary:")
+        print(f"Total: {summary['total']}")
+        print(f"Passed: {summary['passed']}")
+        print(f"Failed: {summary['failed']}")
+        print(f"Success rate: {summary['success_rate']:.1%}")
+
+    return cast(ValidationResult, {"success": successful == total, "results": all_results, "summary": summary})
