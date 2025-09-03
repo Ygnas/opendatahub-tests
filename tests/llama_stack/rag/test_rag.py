@@ -1,3 +1,5 @@
+import io
+import os
 import uuid
 from typing import List
 
@@ -5,10 +7,11 @@ import pytest
 from llama_stack_client import Agent, LlamaStackClient, RAGDocument
 from llama_stack_client.types import EmbeddingsResponse, QueryChunksResponse
 from llama_stack_client.types.vector_io_insert_params import Chunk
+import requests
 from simple_logger.logger import get_logger
 
 from utilities.constants import MinIo, MNT_MODELS
-from utilities.rag_utils import TurnExpectation, validate_rag_agent_responses
+from utilities.rag_utils import TurnExpectation, validate_api_responses, validate_rag_agent_responses
 
 LOGGER = get_logger(name=__name__)
 
@@ -35,6 +38,80 @@ class TestLlamaStackRag:
     Validates core RAG features including deployment, inference, agents,
     vector databases, and document retrieval with the Red Hat LlamaStack Distribution.
     """
+
+    def _download_torchtune_docs(self) -> list[tuple[str, bytes]]:
+        """
+        Helper method to download PyTorch TorchTune documentation files.
+        
+        Returns:
+            List of tuples containing (filename, file_content_bytes)
+        """
+        urls = [
+            "llama3.rst",
+            "chat.rst",
+            "lora_finetune.rst",
+            "qat_finetune.rst",
+            "memory_optimizations.rst",
+        ]
+
+        base_url = "https://raw.githubusercontent.com/pytorch/torchtune/refs/tags/v0.6.1/docs/source/tutorials/"
+        downloaded_files = []
+
+        for file_name in urls:
+            url = f"{base_url}{file_name}"
+            response = requests.get(url)
+            response.raise_for_status()
+            downloaded_files.append((file_name, response.content))
+
+        return downloaded_files
+
+    def _get_torchtune_test_expectations(self) -> List[TurnExpectation]:
+        """
+        Helper method to get the test expectations for TorchTune documentation questions.
+        
+        Returns:
+            List of TurnExpectation objects for testing RAG responses
+        """
+        return [
+            {
+                "question": "what is torchtune",
+                "expected_keywords": ["torchtune", "pytorch", "fine-tuning", "training", "model"],
+                "description": "Should provide information about torchtune framework",
+            },
+            {
+                "question": "What do you know about LoRA?",
+                "expected_keywords": [
+                    "LoRA",
+                    "parameter",
+                    "efficient",
+                    "fine-tuning",
+                    "reduce",
+                ],
+                "description": "Should provide information about LoRA (Low Rank Adaptation)",
+            },
+            {
+                "question": "How can I optimize model training for quantization?",
+                "expected_keywords": [
+                    "Quantization-Aware Training",
+                    "QAT",
+                    "training",
+                    "fine-tuning",
+                    "fake",
+                    "quantized",
+                ],
+                "description": "Should provide information about QAT (Quantization-Aware Training)",
+            },
+            {
+                "question": "Are there any memory optimizations for LoRA?",
+                "expected_keywords": ["QLoRA", "fine-tuning", "4-bit", "Optimization", "LoRA"],
+                "description": "Should provide information about QLoRA",
+            },
+            {
+                "question": "tell me about dora",
+                "expected_keywords": ["dora", "parameter", "magnitude", "direction", "fine-tuning"],
+                "description": "Should provide information about DoRA (Weight-Decomposed Low-Rank Adaptation)",
+            },
+        ]
 
     @pytest.mark.smoke
     def test_rag_inference_embeddings(
@@ -224,46 +301,7 @@ class TestLlamaStackRag:
                 chunk_size_in_tokens=512,
             )
 
-            turns_with_expectations: List[TurnExpectation] = [
-                {
-                    "question": "what is torchtune",
-                    "expected_keywords": ["torchtune", "pytorch", "fine-tuning", "training", "model"],
-                    "description": "Should provide information about torchtune framework",
-                },
-                {
-                    "question": "What do you know about LoRA?",
-                    "expected_keywords": [
-                        "LoRA",
-                        "parameter",
-                        "efficient",
-                        "fine-tuning",
-                        "reduce",
-                    ],
-                    "description": "Should provide information about LoRA (Low Rank Adaptation)",
-                },
-                {
-                    "question": "How can I optimize model training for quantization?",
-                    "expected_keywords": [
-                        "Quantization-Aware Training",
-                        "QAT",
-                        "training",
-                        "fine-tuning",
-                        "fake",
-                        "quantized",
-                    ],
-                    "description": "Should provide information about QAT (Quantization-Aware Training)",
-                },
-                {
-                    "question": "Are there any memory optimizations for LoRA?",
-                    "expected_keywords": ["QLoRA", "fine-tuning", "4-bit"],
-                    "description": "Should provide information about QLoRA",
-                },
-                {
-                    "question": "tell me about dora",
-                    "expected_keywords": ["dora", "parameter", "magnitude", "direction", "fine-tuning"],
-                    "description": "Should provide information about DoRA (Weight-Decomposed Low-Rank Adaptation)",
-                },
-            ]
+            turns_with_expectations = self._get_torchtune_test_expectations()
 
             # Ask the agent about the inserted documents and validate responses
             validation_result = validate_rag_agent_responses(
@@ -293,3 +331,162 @@ class TestLlamaStackRag:
                 llama_stack_client.vector_dbs.unregister(vector_db_id)
             except Exception as e:
                 LOGGER.warning(f"Failed to unregister vector database {vector_db_id}: {e}")
+
+    @pytest.mark.smoke
+    def test_rag_simple_responses(self, minio_pod, minio_data_connection, llama_stack_client: LlamaStackClient) -> None:
+        """
+        Test simple responses API from the llama-stack server.
+        
+        Validates basic text generation capabilities using the responses API endpoint.
+        Tests identity and capability questions to ensure the LLM can provide
+        appropriate responses about itself and its functionality.
+        """
+
+        models = llama_stack_client.models.list()
+        model_id = next(m for m in models if m.api_model_type == "llm").identifier
+
+        response = llama_stack_client.responses.create(
+            model=model_id,
+            input="Who are you?",
+            instructions="You are a helpful assistant.",
+        )
+
+        content = response.output_text
+        assert content is not None, "LLM response content is None"
+        assert any(answer in content.lower() for answer in ["model", "assistant", "ai", "artificial", "language model"]), f"The LLM didn't provide any of the expected answers ['model', 'assistant', 'ai', 'llm', 'language model']. Got: {content}"
+
+        response = llama_stack_client.responses.create(
+            model=model_id,
+            input="What can you do?",
+            instructions="You are a helpful assistant.",
+        )
+        content = response.output_text
+        assert content is not None, "LLM response content is None"
+        assert "answer" in content, "The LLM didn't provide the expected answer to the prompt"
+
+    @pytest.mark.smoke
+    def test_rag_full_responses(self, minio_pod, minio_data_connection, llama_stack_client: LlamaStackClient) -> None:
+        """
+        Test responses API from the llama-stack server with vector store integration.
+        
+        Creates a vector store, uploads documentation files, and tests the responses API
+        with file search capabilities. Validates that the API can retrieve and use
+        knowledge from uploaded documents to answer questions.
+        """
+
+        def _response_fn(q: str) -> str:
+            response = llama_stack_client.responses.create(
+                input=q,
+                model=model_id,
+                tools=[{
+                    "type": "file_search",
+                    "vector_store_ids": [vector_store.id],
+                }],
+            )
+            return response.output_text
+
+        models = llama_stack_client.models.list()
+        model_id = next(m for m in models if m.api_model_type == "llm").identifier
+
+        embedding_model = next(m for m in models if m.api_model_type == "embedding")
+        embedding_dimension = embedding_model.metadata["embedding_dimension"]
+
+        vector_store = llama_stack_client.vector_stores.create(name=f"default_vector_store", embedding_model=embedding_model.identifier, embedding_dimension=embedding_dimension)
+
+        try:
+            downloaded_files = self._download_torchtune_docs()
+            for file_name, file_content in downloaded_files:
+                file_like = io.BytesIO(file_content)
+                file_obj = llama_stack_client.files.create(file=file_like, purpose="assistants")
+                llama_stack_client.vector_stores.files.create(vector_store_id=vector_store.id, file_id=file_obj.id)
+
+            turns_with_expectations = self._get_torchtune_test_expectations()
+            
+            validation_result = validate_api_responses(_response_fn, turns_with_expectations)
+
+            assert validation_result["success"], f"RAG agent validation failed. Summary: {validation_result['summary']}"
+
+            # Additional assertions for specific requirements
+            for result in validation_result["results"]:
+                assert result["success"], (
+                    f"Response for question '{result['question']}' did not meet success criteria.\n"
+                    f"Response: {result['response']}"
+                )
+                assert len(result["found_keywords"]) > 0, (
+                    f"No expected keywords found in response for: {result['question']}\n"
+                    f"Missing keywords: {result['missing_keywords']}\n"
+                    f"Response: {result['response']}"
+                )
+
+        finally:
+            # Cleanup: delete the vector store to prevent resource leaks
+            try:
+                llama_stack_client.vector_stores.delete(vector_store.id)
+            except Exception as e:
+                LOGGER.warning(f"Failed to delete vector store {vector_store.id}: {e}")
+
+    @pytest.mark.skip(reason="Vector store search is not working in the test cluster currently, works fine locally")
+    @pytest.mark.smoke
+    def test_rag_vector_store_search(self, minio_pod, minio_data_connection, llama_stack_client: LlamaStackClient) -> None:
+        """
+        Test vector store search functionality using the search endpoint.
+        
+        Creates a vector store, uploads documentation files, and tests the search API
+        to retrieve relevant chunks based on query text. Validates that the search
+        returns relevant results with proper metadata and content.
+        """
+
+        models = llama_stack_client.models.list()
+        embedding_model = next(m for m in models if m.api_model_type == "embedding")
+        embedding_dimension = embedding_model.metadata["embedding_dimension"]
+
+        vector_store = llama_stack_client.vector_stores.create(
+            name="default_vector_store", 
+            embedding_model=embedding_model.identifier, 
+            embedding_dimension=embedding_dimension
+        )
+
+        try:
+            downloaded_files = self._download_torchtune_docs()
+            for file_name, file_content in downloaded_files:
+                file_like = io.BytesIO(file_content)
+                uploaded_file = llama_stack_client.files.create(file=file_like, purpose="assistants")
+                llama_stack_client.vector_stores.files.create(vector_store_id=vector_store.id, file_id=uploaded_file.id)
+
+            search_queries = [
+                "What is LoRA fine-tuning?",
+                "How does quantization work?",
+                "What are memory optimizations?",
+                "Tell me about DoRA",
+                "What is TorchTune?"
+            ]
+
+            for query in search_queries:
+                # Use the vector store search endpoint
+                search_response = llama_stack_client.vector_stores.search(
+                    vector_store_id=vector_store.id,
+                    query=query
+                )
+                
+                # Validate search response
+                assert search_response is not None, f"Search response is None for query: {query}"
+                assert hasattr(search_response, 'data'), "Search response missing 'data' attribute"
+                assert isinstance(search_response.data, list), "Search response data should be a list"
+                
+                # Check that we got some results
+                assert len(search_response.data) > 0, f"No search results returned for query: {query}"
+                
+                # Validate each search result
+                for result in search_response.data:
+                    assert hasattr(result, 'content'), "Search result missing 'content' attribute"
+                    assert result.content is not None, "Search result content should not be None"
+                    assert len(result.content) > 0, "Search result content should not be empty"
+
+            LOGGER.info(f"Successfully tested vector store search with {len(search_queries)} queries")
+
+        finally:
+            # Cleanup: delete the vector store to prevent resource leaks
+            try:
+                llama_stack_client.vector_stores.delete(vector_store.id)
+            except Exception as e:
+                LOGGER.warning(f"Failed to delete vector store {vector_store.id}: {e}")
